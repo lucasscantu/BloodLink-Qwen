@@ -1,1 +1,66 @@
 @import "tailwindcss";
+
+@theme {
+  --color-blood-50: #fef2f2;
+  --color-blood-100: #fee2e2;
+  --color-blood-200: #fecaca;
+  --color-blood-300: #fca5a5;
+  --color-blood-400: #f87171;
+  --color-blood-500: #ef4444;
+  --color-blood-600: #dc2626;
+  --color-blood-700: #b91c1c;
+  --color-blood-800: #991b1b;
+  --color-blood-900: #7f1d1d;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sidebar-link {
+  @apply flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors;
+}
+
+.sidebar-link:hover {
+  @apply bg-white/10;
+}
+
+.sidebar-link.active {
+  @apply bg-white/20 text-white;
+}
+
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-100 p-6;
+}
+
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.btn-primary {
+  @apply bg-blood-600 hover:bg-blood-700 text-white font-medium py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors;
+}
+
+.btn-success {
+  @apply bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors;
+}
+
+.btn-danger {
+  @apply bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors;
+}
+
+.input-field {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blood-500 focus:border-blood-500 outline-none transition-all;
+}
+
+.table-container {
+  @apply overflow-x-auto rounded-lg border border-gray-200;
+}
+
+.status-badge {
+  @apply px-2 py-1 rounded-full text-xs font-semibold;
+}
