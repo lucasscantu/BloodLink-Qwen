@@ -1,0 +1,251 @@
+// Prisma Schema - BloodLink
+// ⚠️ Geração de migrations: prisma migrate dev --name init
+// ⚠️ binaryTargets inclui linux-musl-openssl-3.0.x para Alpine Docker
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  HEMOCENTRO
+  HOSPITAL
+  AUDITOR
+}
+
+enum BloodType {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+}
+
+enum BloodBagStatus {
+  COLETADA
+  EM_TESTE
+  APROVADA
+  REPROVADA
+  ARMAZENADA
+  DISPONIVEL
+  RESERVADA
+  EM_TRANSPORTE
+  RECEBIDA
+  UTILIZADA
+  DESCARTADA
+  EXPIRADA
+}
+
+enum InstitutionType {
+  HEMOCENTRO
+  HOSPITAL
+}
+
+enum DemandStatus {
+  ABERTA
+  EM_ANALISE
+  ATENDIDA
+  PARCIALMENTE_ATENDIDA
+  CANCELADA
+  EXPIRADA
+}
+
+enum DemandUrgency {
+  BAIXA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum TransferStatus {
+  OFERTADA
+  ACEITA
+  RESERVADA
+  EM_TRANSPORTE
+  RECEBIDA
+  RECUSADA
+  CANCELADA
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model Institution {
+  id        String          @id @default(uuid())
+  name      String
+  type      InstitutionType
+  city      String
+  state     String
+  latitude  Float
+  longitude Float
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  users            User[]
+  bloodBags        BloodBag[]
+  events           BloodBagEvent[]
+  demands          BloodDemand[]
+  sourceTransfers  BloodTransfer[] @relation("SourceInstitution")
+  destTransfers    BloodTransfer[] @relation("DestinationInstitution")
+  tempReadings     TemperatureReading[]
+
+  @@index([type])
+  @@index([city, state])
+}
+
+model User {
+  id            String      @id @default(uuid())
+  name          String
+  email         String      @unique
+  passwordHash  String
+  role          UserRole
+  institutionId String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  institution Institution? @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+  performedEvents BloodBagEvent[]
+  auditLogs     AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model BloodBag {
+  id                String         @id @default(uuid())
+  code              String         @unique
+  bloodType         BloodType
+  volume            Int
+  status            BloodBagStatus @default(COLETADA)
+  instituicaoAtualId String
+  collectedAt       DateTime       @default(now())
+  expiresAt         DateTime
+  blockchainTxHash  String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  instituicaoAtual Institution @relation(fields: [instituicaoAtualId], references: [id], onDelete: Restrict)
+  events           BloodBagEvent[]
+  transfers        BloodTransfer[]
+  temperatureReadings TemperatureReading[]
+
+  @@index([code])
+  @@index([status])
+  @@index([bloodType])
+  @@index([instituicaoAtualId])
+}
+
+model BloodBagEvent {
+  id              String   @id @default(uuid())
+  bloodBagId      String
+  type            String
+  description     String
+  performedById   String
+  institutionId   String
+  // ⚠️ eventIndex: índice real do evento no array on-chain daquela bolsa,
+  // retornado pela própria chamada ao contrato. NÃO reconstruir por timestamp.
+  eventIndex      Int
+  dataHash        String
+  blockchainTxHash String
+  createdAt       DateTime @default(now())
+
+  bloodBag      BloodBag    @relation(fields: [bloodBagId], references: [id], onDelete: Restrict)
+  performedBy   User        @relation(fields: [performedById], references: [id], onDelete: Restrict)
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([bloodBagId, eventIndex])
+  @@index([blockchainTxHash])
+}
+
+model BloodDemand {
+  id            String        @id @default(uuid())
+  institutionId String
+  bloodType     BloodType
+  quantity      Int
+  urgency       DemandUrgency
+  status        DemandStatus  @default(ABERTA)
+  description   String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  institution Institution     @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  transfers   BloodTransfer[]
+
+  @@index([status])
+  @@index([bloodType])
+}
+
+model BloodTransfer {
+  id                     String         @id @default(uuid())
+  bloodBagId             String
+  demandId               String?
+  sourceInstitutionId    String
+  destinationInstitutionId String
+  status                 TransferStatus @default(OFERTADA)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  bloodBag             BloodBag    @relation(fields: [bloodBagId], references: [id], onDelete: Restrict)
+  demand               BloodDemand? @relation(fields: [demandId], references: [id], onDelete: SetNull)
+  sourceInstitution    Institution @relation("SourceInstitution", fields: [sourceInstitutionId], references: [id], onDelete: Restrict)
+  destinationInstitution Institution @relation("DestinationInstitution", fields: [destinationInstitutionId], references: [id], onDelete: Restrict)
+
+  @@index([status])
+  @@index([bloodBagId])
+  @@index([demandId])
+}
+
+model TemperatureReading {
+  id            String   @id @default(uuid())
+  bloodBagId    String
+  temperature   Float
+  institutionId String
+  alert         Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  bloodBag    BloodBag    @relation(fields: [bloodBagId], references: [id], onDelete: Restrict)
+  institution Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([bloodBagId])
+  @@index([alert])
+}
+
+model BlockchainTransaction {
+  id            String   @id @default(uuid())
+  txHash        String   @unique
+  blockNumber   Int
+  method        String
+  bloodBagCode  String
+  eventIndex    Int
+  dataHash      String
+  createdAt     DateTime @default(now())
+
+  @@index([bloodBagCode])
+  @@index([txHash])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  action     String
+  entityType String
+  entityId   String
+  details    String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+}

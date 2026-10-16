@@ -1,0 +1,48 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json ./
+RUN npm install hardhat @nomicfoundation/hardhat-toolbox --save-dev
+
+COPY . .
+
+# Compila o contrato
+RUN npx hardhat compile
+
+# Script de inicialização: sobe o nó e faz deploy automático
+COPY <<'EOF' /app/start.sh
+#!/bin/sh
+set -e
+
+# Inicia o nó Hardhat em background
+npx hardhat node > /tmp/hardhat.log 2>&1 &
+NODE_PID=$!
+
+# Aguarda o nó estar pronto
+echo "[Blockchain] Waiting for Hardhat node..."
+for i in $(seq 1 30); do
+  if wget --spider -q http://localhost:8545 2>/dev/null; then
+    echo "[Blockchain] Node is ready!"
+    break
+  fi
+  sleep 1
+done
+
+# Faz o deploy do contrato
+echo "[Blockchain] Deploying contract..."
+npx hardhat run scripts/deploy.js --network localhost
+
+# Copia deployed.json para o volume compartilhado
+cp deployed.json /app/deployed/deployed.json
+echo "[Blockchain] Contract deployed and address saved to shared volume"
+
+# Mantém o nó rodando
+wait $NODE_PID
+EOF
+
+RUN chmod +x /app/start.sh
+
+EXPOSE 8545
+
+CMD ["/app/start.sh"]
