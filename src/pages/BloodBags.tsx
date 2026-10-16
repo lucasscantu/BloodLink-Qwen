@@ -164,18 +164,18 @@ export default function BloodBags() {
 function RegisterBagModal({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
   const { institutions, addBloodBag } = useData();
-  const { success } = useNotification();
+  const { success, error } = useNotification();
   const [bloodType, setBloodType] = useState<BloodType>('O_POS');
   const [volume, setVolume] = useState('450');
   const [institutionId, setInstitutionId] = useState(user?.institutionId || '');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!institutionId || !user) return;
     setLoading(true);
-    setTimeout(() => {
-      addBloodBag({
+    try {
+      await addBloodBag({
         bloodType,
         volume: parseInt(volume),
         institutionId,
@@ -184,7 +184,10 @@ function RegisterBagModal({ onClose }: { onClose: () => void }) {
       success('Bolsa cadastrada com sucesso e registrada na blockchain!');
       setLoading(false);
       onClose();
-    }, 800);
+    } catch (err) {
+      error('Erro ao cadastrar bolsa.');
+      setLoading(false);
+    }
   };
 
   return (

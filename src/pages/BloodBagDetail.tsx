@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotification } from '../contexts/NotificationContext';
+import { blockchainService } from '../services/BlockchainService';
 import { BLOOD_TYPE_LABELS, STATUS_LABELS, STATUS_COLORS } from '../types';
 import { ArrowLeft, QrCode, Shield, AlertTriangle, ThermometerSun, CheckCircle2, Copy, XCircle } from 'lucide-react';
 import { Timeline } from '../components/Timeline';
@@ -14,8 +15,8 @@ export default function BloodBagDetail() {
   const { code } = useParams<{ code: string }>();
   const [searchParams] = useSearchParams();
   const { user, hasRole } = useAuth();
-  const { getBloodBagByCode, temperatureReadings, approveBloodBag, rejectBloodBag, storeBloodBag, makeAvailableBloodBag, useBloodBag, discardBloodBag } = useData();
-  const { success, error: showError } = useNotification();
+  const { getBloodBagByCode, temperatureReadings, approveBloodBag, rejectBloodBag, storeBloodBag, makeAvailableBloodBag, useBloodBag, discardBloodBag, verifyBlockchainIntegrity } = useData();
+  const { success, error } = useNotification();
   const [showQR, setShowQR] = useState(searchParams.get('qr') === 'true');
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState<boolean | null>(null);
@@ -32,53 +33,106 @@ export default function BloodBagDetail() {
     }
   }, [searchParams]);
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
+    if (!bag) return;
     setVerifying(true);
-    setTimeout(() => {
+    try {
+      // Verificar integridade da blockchain
+      const chainValid = await verifyBlockchainIntegrity();
+      
+      // Verificar eventos específicos da bolsa
+      const events = bag.events;
+      let allEventsValid = true;
+      
+      for (const event of events) {
+        const isValid = await blockchainService.verifyEvent(
+          bag.code,
+          event.eventIndex,
+          event.dataHash
+        );
+        if (!isValid) {
+          allEventsValid = false;
+          break;
+        }
+      }
+      
       setVerifying(false);
-      setVerified(true);
-      success('Integridade verificada com sucesso!');
-    }, 1500);
+      setVerified(chainValid && allEventsValid);
+      
+      if (chainValid && allEventsValid) {
+        success(`Integridade verificada! ${events.length} eventos confirmados na blockchain.`);
+      } else {
+        error('Divergência detectada na blockchain!');
+      }
+    } catch (err) {
+      setVerifying(false);
+      setVerified(false);
+      error('Erro ao verificar integridade da blockchain.');
+    }
   };
 
-  const handleApprove = () => {
+  const handleApprove = async () => {
     if (!bag || !user) return;
-    approveBloodBag(bag.id, user);
-    success('Bolsa aprovada com sucesso!');
+    const result = await approveBloodBag(bag.id, user);
+    if (result) {
+      success('Bolsa aprovada com sucesso! Registro na blockchain realizado.');
+    } else {
+      error('Não foi possível aprovar a bolsa.');
+    }
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
     if (!bag || !user) return;
-    rejectBloodBag(bag.id, rejectReason || 'Reprovada em testes', user);
-    success('Bolsa reprovada.');
-    setShowRejectModal(false);
-    setRejectReason('');
+    const result = await rejectBloodBag(bag.id, rejectReason || 'Reprovada em testes', user);
+    if (result) {
+      success('Bolsa reprovada. Registro na blockchain realizado.');
+      setShowRejectModal(false);
+      setRejectReason('');
+    } else {
+      error('Não foi possível reprovar a bolsa.');
+    }
   };
 
-  const handleStore = () => {
+  const handleStore = async () => {
     if (!bag || !user) return;
-    storeBloodBag(bag.id, user);
-    success('Bolsa armazenada.');
+    const result = await storeBloodBag(bag.id, user);
+    if (result) {
+      success('Bolsa armazenada. Registro na blockchain realizado.');
+    } else {
+      error('Não foi possível armazenar a bolsa.');
+    }
   };
 
-  const handleMakeAvailable = () => {
+  const handleMakeAvailable = async () => {
     if (!bag || !user) return;
-    makeAvailableBloodBag(bag.id, user);
-    success('Bolsa liberada para uso.');
+    const result = await makeAvailableBloodBag(bag.id, user);
+    if (result) {
+      success('Bolsa liberada para uso. Registro na blockchain realizado.');
+    } else {
+      error('Não foi possível liberar a bolsa.');
+    }
   };
 
-  const handleUse = () => {
+  const handleUse = async () => {
     if (!bag || !user) return;
-    useBloodBag(bag.id, user);
-    success('Bolsa marcada como utilizada.');
+    const result = await useBloodBag(bag.id, user);
+    if (result) {
+      success('Bolsa marcada como utilizada. Registro na blockchain realizado.');
+    } else {
+      error('Não foi possível marcar a bolsa como utilizada.');
+    }
   };
 
-  const handleDiscard = () => {
+  const handleDiscard = async () => {
     if (!bag || !user) return;
-    discardBloodBag(bag.id, discardReason || 'Descartada conforme protocolo', user);
-    success('Bolsa descartada.');
-    setShowDiscardModal(false);
-    setDiscardReason('');
+    const result = await discardBloodBag(bag.id, discardReason || 'Descartada conforme protocolo', user);
+    if (result) {
+      success('Bolsa descartada. Registro na blockchain realizado.');
+      setShowDiscardModal(false);
+      setDiscardReason('');
+    } else {
+      error('Não foi possível descartar a bolsa.');
+    }
   };
 
   if (!bag) {
