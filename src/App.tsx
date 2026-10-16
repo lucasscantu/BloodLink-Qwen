@@ -14,6 +14,7 @@ import AuditLogPage from './pages/AuditLog';
 import Institutions from './pages/Institutions';
 import UsersPage from './pages/Users';
 import Settings from './pages/Settings';
+import NotFound from './pages/NotFound';
 import { UserRole } from './types';
 
 // Protected route wrapper - requires authentication
@@ -73,7 +74,7 @@ function AppRoutes() {
 
       {/* Default redirect */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
