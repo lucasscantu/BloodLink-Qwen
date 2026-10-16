@@ -1,0 +1,77 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# BloodLink Docker Compose
+# ──────────────────────────────────────────────────────────────────────────────
+# ⚠️ Mapeamento de portas: formato "HOST:CONTAINER"
+#     - O lado ESQUERDO (HOST) pode mudar se a porta do host estiver em conflito.
+#     - O lado DIREITO (CONTAINER) NUNCA deve mudar — a comunicação entre
+#       containers usa sempre a porta interna, independente da porta exposta ao host.
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ─── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: bloodlink
+      POSTGRES_PASSWORD: bloodlink
+      POSTGRES_DB: bloodlink
+    ports:
+      - "5432:5432"   # HOST:CONTAINER — só mude o lado esquerdo se necessário
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bloodlink"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ─── Blockchain (Hardhat Node) ──────────────────────────────────────────────
+  blockchain:
+    build:
+      context: ./backend/blockchain
+      dockerfile: Dockerfile.blockchain
+    ports:
+      - "8545:8545"   # HOST:CONTAINER
+    volumes:
+      - blockchain_deployed:/app/deployed
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8545"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── Backend (Node.js + Express) ────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"   # HOST:CONTAINER
+    environment:
+      DATABASE_URL: "postgresql://bloodlink:bloodlink@postgres:5432/bloodlink?schema=public"
+      JWT_SECRET: "bloodlink-docker-secret-change-in-production"
+      PORT: "4000"
+      BLOCKCHAIN_RPC_URL: "http://blockchain:8545"
+      BLOCKCHAIN_PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      DEPLOYED_CONTRACT_PATH: "/app/blockchain/deployed.json"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      blockchain:
+        condition: service_healthy
+    volumes:
+      - blockchain_deployed:/app/blockchain/deployed:ro
+
+  # ─── Frontend (Nginx) ───────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:80"     # HOST:CONTAINER
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  blockchain_deployed:
