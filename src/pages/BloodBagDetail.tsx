@@ -1,62 +1,113 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { bloodBags, temperatureReadings } from '../data';
+import { useData } from '../contexts/DataContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useNotification } from '../contexts/NotificationContext';
 import { BLOOD_TYPE_LABELS, STATUS_LABELS, STATUS_COLORS } from '../types';
-import { ArrowLeft, QrCode, Shield, AlertTriangle, ThermometerSun, CheckCircle2, Copy, ExternalLink } from 'lucide-react';
+import { ArrowLeft, QrCode, Shield, AlertTriangle, ThermometerSun, CheckCircle2, Copy, XCircle } from 'lucide-react';
+import { Timeline } from '../components/Timeline';
+import { Modal } from '../components/Modal';
+import { ConfirmationModal } from '../components/ConfirmationModal';
 
 export default function BloodBagDetail() {
   const { code } = useParams<{ code: string }>();
-  const [bag, setBag] = useState<typeof bloodBags[0] | null>(null);
-  const [error, setError] = useState('');
-  const [showQR, setShowQR] = useState(false);
-  const [copied, setCopied] = useState('');
+  const [searchParams] = useSearchParams();
+  const { user, hasRole } = useAuth();
+  const { getBloodBagByCode, temperatureReadings, approveBloodBag, rejectBloodBag, storeBloodBag, makeAvailableBloodBag, useBloodBag, discardBloodBag } = useData();
+  const { success, error: showError } = useNotification();
+  const [showQR, setShowQR] = useState(searchParams.get('qr') === 'true');
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState<boolean | null>(null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [discardReason, setDiscardReason] = useState('');
+
+  const bag = code ? getBloodBagByCode(code) : undefined;
 
   useEffect(() => {
-    try {
-      const found = bloodBags.find(b => b.code === code);
-      if (found) {
-        setBag(found);
-      } else {
-        setError('Bolsa não encontrada.');
-      }
-    } catch {
-      setError('Erro ao carregar dados da bolsa.');
+    if (searchParams.get('qr') === 'true') {
+      setShowQR(true);
     }
-  }, [code]);
+  }, [searchParams]);
 
   const handleVerify = () => {
     setVerifying(true);
     setTimeout(() => {
       setVerifying(false);
       setVerified(true);
+      success('Integridade verificada com sucesso!');
     }, 1500);
   };
 
-  const handleCopy = (text: string, label: string) => {
-    navigator.clipboard.writeText(text).catch(() => {});
-    setCopied(label);
-    setTimeout(() => setCopied(''), 2000);
+  const handleApprove = () => {
+    if (!bag || !user) return;
+    approveBloodBag(bag.id, user);
+    success('Bolsa aprovada com sucesso!');
   };
 
-  if (error) {
+  const handleReject = () => {
+    if (!bag || !user) return;
+    rejectBloodBag(bag.id, rejectReason || 'Reprovada em testes', user);
+    success('Bolsa reprovada.');
+    setShowRejectModal(false);
+    setRejectReason('');
+  };
+
+  const handleStore = () => {
+    if (!bag || !user) return;
+    storeBloodBag(bag.id, user);
+    success('Bolsa armazenada.');
+  };
+
+  const handleMakeAvailable = () => {
+    if (!bag || !user) return;
+    makeAvailableBloodBag(bag.id, user);
+    success('Bolsa liberada para uso.');
+  };
+
+  const handleUse = () => {
+    if (!bag || !user) return;
+    useBloodBag(bag.id, user);
+    success('Bolsa marcada como utilizada.');
+  };
+
+  const handleDiscard = () => {
+    if (!bag || !user) return;
+    discardBloodBag(bag.id, discardReason || 'Descartada conforme protocolo', user);
+    success('Bolsa descartada.');
+    setShowDiscardModal(false);
+    setDiscardReason('');
+  };
+
+  if (!bag) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-600 mb-4">{error}</p>
+        <p className="text-red-600 mb-4">Bolsa não encontrada.</p>
         <Link to="/blood-bags" className="btn-secondary">Voltar para lista</Link>
       </div>
     );
   }
 
-  if (!bag) {
-    return <div className="text-center py-12 text-gray-500">Carregando...</div>;
-  }
-
   const bagTemps = temperatureReadings.filter(t => t.bloodBagId === bag.id);
   const hasAlert = bagTemps.some(t => t.alert);
   const qrValue = `${window.location.origin}/blood-bags/${bag.code}`;
+
+  const timelineItems = bag.events.map(event => ({
+    id: event.id,
+    title: event.type,
+    description: event.description,
+    timestamp: event.createdAt,
+    status: event.type === 'REPROVACAO' || event.type === 'DESCARTE' ? 'error' as const :
+            event.type === 'APROVACAO' || event.type === 'RECEBIMENTO' ? 'success' as const :
+            event.type === 'ENVIO' || event.type === 'EM_TRANSPORTE' ? 'warning' as const : 'pending' as const,
+    metadata: {
+      'Por': event.performedBy?.name || 'Sistema',
+      'Local': event.institution?.name || '—',
+      'Hash': `${event.dataHash.slice(0, 12)}...`,
+    },
+  }));
 
   return (
     <div className="space-y-6">
@@ -73,7 +124,7 @@ export default function BloodBagDetail() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowQR(!showQR)} className="btn-secondary flex items-center gap-2">
-            <QrCode size={16} /> QR Code
+            <QrCode size={16} /> {showQR ? 'Ocultar QR' : 'QR Code'}
           </button>
           <button onClick={handleVerify} disabled={verifying} className="btn-primary flex items-center gap-2">
             <Shield size={16} /> {verifying ? 'Verificando...' : 'Verificar Blockchain'}
@@ -90,15 +141,13 @@ export default function BloodBagDetail() {
               {verified ? 'Integridade verificada com sucesso!' : 'Divergência detectada!'}
             </p>
             <p className="text-sm text-gray-600">
-              {verified
-                ? `Todos os ${bag.events.length} eventos conferem com o registro on-chain.`
-                : 'Hash de um ou mais eventos não confere com o registro on-chain.'}
+              {verified ? `Todos os ${bag.events.length} eventos conferem com o registro on-chain.` : 'Hash divergente.'}
             </p>
           </div>
         </div>
       )}
 
-      {/* QR Code Modal */}
+      {/* QR Code */}
       {showQR && (
         <div className="card">
           <div className="flex items-center justify-between mb-4">
@@ -152,37 +201,37 @@ export default function BloodBagDetail() {
       <div className="card">
         <h3 className="font-semibold text-gray-900 mb-4">Ações Disponíveis</h3>
         <div className="flex flex-wrap gap-3">
-          {(bag.status === 'COLETADA' || bag.status === 'EM_TESTE') && (
+          {(bag.status === 'COLETADA' || bag.status === 'EM_TESTE') && hasRole('ADMIN', 'HEMOCENTRO') && (
             <>
-              <button className="btn-success flex items-center gap-2">
+              <button onClick={handleApprove} className="btn-success flex items-center gap-2">
                 <CheckCircle2 size={16} /> Aprovar
               </button>
-              <button className="btn-danger flex items-center gap-2">
-                ✕ Reprovar
+              <button onClick={() => setShowRejectModal(true)} className="btn-danger flex items-center gap-2">
+                <XCircle size={16} /> Reprovar
               </button>
             </>
           )}
-          {bag.status === 'APROVADA' && (
-            <button className="btn-primary">Armazenar</button>
+          {bag.status === 'APROVADA' && hasRole('ADMIN', 'HEMOCENTRO') && (
+            <button onClick={handleStore} className="btn-primary">Armazenar</button>
           )}
-          {bag.status === 'ARMAZENADA' && (
-            <button className="btn-primary">Liberar para Uso</button>
+          {bag.status === 'ARMAZENADA' && hasRole('ADMIN', 'HEMOCENTRO') && (
+            <button onClick={handleMakeAvailable} className="btn-primary">Liberar para Uso</button>
           )}
           {bag.status === 'DISPONIVEL' && (
             <>
-              <button className="btn-primary">Marcar como Utilizada</button>
-              <button className="btn-secondary">Iniciar Transferência</button>
-              <button className="btn-danger">Descartar</button>
+              {hasRole('ADMIN', 'HOSPITAL') && (
+                <button onClick={handleUse} className="btn-primary">Marcar como Utilizada</button>
+              )}
+              {hasRole('ADMIN', 'HEMOCENTRO') && (
+                <>
+                  <Link to="/transfers" className="btn-secondary">Iniciar Transferência</Link>
+                  <button onClick={() => setShowDiscardModal(true)} className="btn-danger">Descartar</button>
+                </>
+              )}
             </>
           )}
-          {bag.status === 'RESERVADA' && (
-            <button className="btn-primary">Iniciar Transporte</button>
-          )}
-          {bag.status === 'EM_TRANSPORTE' && (
-            <button className="btn-success">Confirmar Recebimento</button>
-          )}
-          {bag.status === 'RECEBIDA' && (
-            <button className="btn-primary">Marcar como Utilizada</button>
+          {bag.status === 'RECEBIDA' && hasRole('ADMIN', 'HOSPITAL') && (
+            <button onClick={handleUse} className="btn-primary">Marcar como Utilizada</button>
           )}
         </div>
       </div>
@@ -190,55 +239,48 @@ export default function BloodBagDetail() {
       {/* Event Timeline */}
       <div className="card">
         <h3 className="font-semibold text-gray-900 mb-4">Histórico de Eventos (Blockchain)</h3>
-        <div className="space-y-0">
-          {bag.events.map((event, idx) => (
-            <div key={event.id} className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                  idx === 0 ? 'bg-blood-100 text-blood-700' : 'bg-gray-100 text-gray-600'
-                }`}>
-                  {event.eventIndex}
-                </div>
-                {idx < bag.events.length - 1 && <div className="w-0.5 h-full bg-gray-200 my-1" />}
-              </div>
-              <div className="flex-1 pb-6">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-gray-900">{event.type}</p>
-                  <span className="text-xs text-gray-500">{new Date(event.createdAt).toLocaleString('pt-BR')}</span>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">{event.description}</p>
-                <div className="flex items-center gap-4 mt-2">
-                  <span className="text-xs text-gray-500">
-                    Por: {event.performedBy?.name || 'Sistema'}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    Local: {event.institution?.name}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-xs text-gray-400 font-mono">
-                    Hash: {event.dataHash.slice(0, 18)}...
-                  </span>
-                  <button
-                    onClick={() => handleCopy(event.dataHash, `hash-${event.id}`)}
-                    className="text-gray-400 hover:text-gray-600"
-                    title="Copiar hash"
-                  >
-                    <Copy size={12} />
-                  </button>
-                  {copied === `hash-${event.id}` && <span className="text-xs text-green-600">Copiado!</span>}
-                </div>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-xs text-gray-400 font-mono">
-                    TX: {event.blockchainTxHash.slice(0, 18)}...
-                  </span>
-                  <ExternalLink size={10} className="text-gray-400" />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <Timeline items={timelineItems} />
       </div>
+
+      {/* Reject Modal */}
+      <Modal isOpen={showRejectModal} onClose={() => setShowRejectModal(false)} title="Reprovar Bolsa">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Motivo da reprovação</label>
+            <textarea
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              className="input-field"
+              rows={3}
+              placeholder="Descreva o motivo..."
+            />
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setShowRejectModal(false)} className="btn-secondary flex-1">Cancelar</button>
+            <button onClick={handleReject} className="btn-danger flex-1">Confirmar Reprovação</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Discard Modal */}
+      <Modal isOpen={showDiscardModal} onClose={() => setShowDiscardModal(false)} title="Descartar Bolsa">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Motivo do descarte</label>
+            <textarea
+              value={discardReason}
+              onChange={e => setDiscardReason(e.target.value)}
+              className="input-field"
+              rows={3}
+              placeholder="Descreva o motivo..."
+            />
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setShowDiscardModal(false)} className="btn-secondary flex-1">Cancelar</button>
+            <button onClick={handleDiscard} className="btn-danger flex-1">Confirmar Descarte</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

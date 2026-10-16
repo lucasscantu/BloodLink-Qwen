@@ -1,25 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { temperatureReadings, bloodBags } from '../data';
+import { useData } from '../contexts/DataContext';
 import { TemperatureReading, BLOOD_TYPE_LABELS } from '../types';
 import { ThermometerSun, AlertTriangle, CheckCircle2 } from 'lucide-react';
 
 export default function Temperature() {
-  const [readings, setReadings] = useState<TemperatureReading[]>([]);
+  const { temperatureReadings, bloodBags } = useData();
   const [error, setError] = useState('');
 
   useEffect(() => {
     try {
-      setReadings([...temperatureReadings]);
+      // Data is already loaded from DataStore
     } catch {
       setError('Erro ao carregar leituras de temperatura.');
     }
   }, []);
 
-  const alerts = readings.filter(r => r.alert);
-  const normal = readings.filter(r => !r.alert);
+  const alerts = temperatureReadings.filter(r => r.alert);
+  const normal = temperatureReadings.filter(r => !r.alert);
 
-  const chartData = readings.map(r => ({
+  const chartData = temperatureReadings.map(r => ({
     time: new Date(r.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
     temp: r.temperature,
     alert: r.alert,
@@ -43,7 +43,7 @@ export default function Temperature() {
             <ThermometerSun size={18} className="text-blue-600" />
           </div>
           <div>
-            <p className="text-2xl font-bold text-gray-900">{readings.length}</p>
+            <p className="text-2xl font-bold text-gray-900">{temperatureReadings.length}</p>
             <p className="text-xs text-gray-500">Leituras Totais</p>
           </div>
         </div>
@@ -136,9 +136,8 @@ export default function Temperature() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {readings.map(r => {
-                const bag = bloodBags.find(b => b.id === r.bloodBagId);
-                return (
+            {temperatureReadings.map(r => {
+              const bag = bloodBags.find(b => b.id === r.bloodBagId);                return (
                   <tr key={r.id} className={`hover:bg-gray-50 ${r.alert ? 'bg-red-50/50' : ''}`}>
                     <td className="px-4 py-3 text-gray-600">{new Date(r.createdAt).toLocaleString('pt-BR')}</td>
                     <td className="px-4 py-3">
