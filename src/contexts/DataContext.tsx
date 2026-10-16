@@ -13,6 +13,7 @@ import {
   TemperatureReading, AuditLog, BloodBagEvent, BloodType,
   DemandUrgency, InstitutionType, UserRole, BloodBagStatus
 } from '../types';
+import { blockchainService } from '../services/BlockchainService';
 
 const STORAGE_KEY = 'bloodlink_data';
 
@@ -27,52 +28,37 @@ interface DataState {
 }
 
 interface DataStore extends DataState {
-  // Institution actions
   addInstitution: (data: Omit<Institution, 'id' | 'createdAt'>) => Institution;
-  
-  // User actions
   addUser: (data: { name: string; email: string; role: UserRole; institutionId?: string }) => User;
-  
-  // Blood bag actions
-  addBloodBag: (data: { bloodType: BloodType; volume: number; institutionId: string; performedBy: User }) => BloodBag;
-  approveBloodBag: (bagId: string, performedBy: User) => BloodBag | null;
-  rejectBloodBag: (bagId: string, reason: string, performedBy: User) => BloodBag | null;
-  storeBloodBag: (bagId: string, performedBy: User) => BloodBag | null;
-  makeAvailableBloodBag: (bagId: string, performedBy: User) => BloodBag | null;
-  useBloodBag: (bagId: string, performedBy: User) => BloodBag | null;
-  discardBloodBag: (bagId: string, reason: string, performedBy: User) => BloodBag | null;
-  
-  // Demand actions
+  addBloodBag: (data: { bloodType: BloodType; volume: number; institutionId: string; performedBy: User }) => Promise<BloodBag>;
+  approveBloodBag: (bagId: string, performedBy: User) => Promise<BloodBag | null>;
+  rejectBloodBag: (bagId: string, reason: string, performedBy: User) => Promise<BloodBag | null>;
+  storeBloodBag: (bagId: string, performedBy: User) => Promise<BloodBag | null>;
+  makeAvailableBloodBag: (bagId: string, performedBy: User) => Promise<BloodBag | null>;
+  useBloodBag: (bagId: string, performedBy: User) => Promise<BloodBag | null>;
+  discardBloodBag: (bagId: string, reason: string, performedBy: User) => Promise<BloodBag | null>;
   addDemand: (data: { institutionId: string; bloodType: BloodType; quantity: number; urgency: DemandUrgency; description: string }) => BloodDemand;
   cancelDemand: (demandId: string) => BloodDemand | null;
-  
-  // Transfer actions
   createTransfer: (data: { bloodBagId: string; sourceInstitutionId: string; destinationInstitutionId: string; demandId?: string }) => BloodTransfer | null;
   acceptTransfer: (transferId: string) => BloodTransfer | null;
   reserveTransfer: (transferId: string) => BloodTransfer | null;
-  startTransportTransfer: (transferId: string, performedBy: User) => BloodTransfer | null;
-  receiveTransfer: (transferId: string, performedBy: User) => BloodTransfer | null;
+  startTransportTransfer: (transferId: string, performedBy: User) => Promise<BloodTransfer | null>;
+  receiveTransfer: (transferId: string, performedBy: User) => Promise<BloodTransfer | null>;
   refuseTransfer: (transferId: string) => BloodTransfer | null;
   cancelTransfer: (transferId: string) => BloodTransfer | null;
-  
-  // Temperature
   addTemperatureReading: (bloodBagId: string, temperature: number, institutionId: string) => TemperatureReading;
-  
-  // Helpers
   getBloodBagByCode: (code: string) => BloodBag | undefined;
   getBloodBagById: (id: string) => BloodBag | undefined;
   getInstitutionById: (id: string) => Institution | undefined;
   getUserById: (id: string) => User | undefined;
   getDemandById: (id: string) => BloodDemand | undefined;
   getTransferById: (id: string) => BloodTransfer | undefined;
-  
-  // Reset
+  verifyBlockchainIntegrity: () => Promise<boolean>;
   resetData: () => void;
 }
 
 const DataContext = createContext<DataStore | undefined>(undefined);
 
-// Load data from localStorage or use initial data
 function loadInitialState(): DataState {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -97,7 +83,6 @@ function loadInitialState(): DataState {
 export function DataProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DataState>(loadInitialState);
 
-  // Persist to localStorage on state change
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -120,29 +105,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setState(prev => ({ ...prev, auditLogs: [log, ...prev.auditLogs] }));
   }, [state.users]);
 
-  const generateEvent = useCallback((
+  const createBlockchainEvent = useCallback(async (
     bloodBagId: string,
+    bloodBagCode: string,
     type: string,
     description: string,
     performedBy: User,
     institutionId: string,
-    eventIndex: number
-  ): BloodBagEvent => ({
-    id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-    bloodBagId,
-    type,
-    description,
-    performedById: performedBy.id,
-    performedBy,
-    institutionId,
-    institution: state.institutions.find(i => i.id === institutionId),
-    eventIndex,
-    dataHash: `0x${Math.random().toString(16).slice(2, 66)}`,
-    blockchainTxHash: `0x${Math.random().toString(16).slice(2, 66)}`,
-    createdAt: new Date().toISOString(),
-  }), [state.institutions]);
+    eventData: any
+  ): Promise<BloodBagEvent> => {
+    const blockchainEvent = await blockchainService.registerEvent(
+      bloodBagCode,
+      type,
+      eventData,
+      performedBy.id,
+      institutionId
+    );
 
-  // Institution actions
+    const history = await blockchainService.getHistory(bloodBagCode);
+    const eventIndex = history.length - 1;
+
+    return {
+      id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      bloodBagId,
+      type,
+      description,
+      performedById: performedBy.id,
+      performedBy,
+      institutionId,
+      institution: state.institutions.find(i => i.id === institutionId),
+      eventIndex,
+      dataHash: blockchainEvent.dataHash,
+      blockchainTxHash: blockchainEvent.txHash,
+      createdAt: new Date(blockchainEvent.timestamp).toISOString(),
+    };
+  }, [state.institutions]);
+
   const addInstitution = useCallback((data: Omit<Institution, 'id' | 'createdAt'>): Institution => {
     const newInst: Institution = {
       ...data,
@@ -153,7 +151,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return newInst;
   }, []);
 
-  // User actions
   const addUser = useCallback((data: { name: string; email: string; role: UserRole; institutionId?: string }): User => {
     const newUser: User = {
       id: `user-${Date.now()}`,
@@ -168,12 +165,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return newUser;
   }, [state.institutions]);
 
-  // Blood bag actions
-  const addBloodBag = useCallback((data: { bloodType: BloodType; volume: number; institutionId: string; performedBy: User }): BloodBag => {
+  const addBloodBag = useCallback(async (data: { bloodType: BloodType; volume: number; institutionId: string; performedBy: User }): Promise<BloodBag> => {
     const count = state.bloodBags.length;
     const code = `BL-${String(count + 1).padStart(5, '0')}`;
+    const bagId = `bag-${Date.now()}`;
+    
     const newBag: BloodBag = {
-      id: `bag-${Date.now()}`,
+      id: bagId,
       code,
       bloodType: data.bloodType,
       volume: data.volume,
@@ -184,102 +182,165 @@ export function DataProvider({ children }: { children: ReactNode }) {
       expiresAt: new Date(Date.now() + 42 * 24 * 60 * 60 * 1000).toISOString(),
       events: [],
       temperatureReadings: [],
-      blockchainTxHash: `0x${Math.random().toString(16).slice(2, 66)}`,
+      blockchainTxHash: null,
     };
 
-    const event = generateEvent(newBag.id, 'COLETA', `Bolsa ${code} coletada - ${data.bloodType}`, data.performedBy, data.institutionId, 0);
+    const event = await createBlockchainEvent(
+      bagId,
+      code,
+      'COLETA',
+      `Bolsa ${code} coletada - ${data.bloodType}`,
+      data.performedBy,
+      data.institutionId,
+      { bloodType: data.bloodType, volume: data.volume }
+    );
+    
     newBag.events = [event];
+    newBag.blockchainTxHash = event.blockchainTxHash;
 
     setState(prev => ({ ...prev, bloodBags: [newBag, ...prev.bloodBags] }));
-    addAuditLog(data.performedBy.id, 'CREATE_BLOOD_BAG', 'BloodBag', newBag.id, `Bolsa ${code} cadastrada - ${data.bloodType}`);
+    addAuditLog(data.performedBy.id, 'CREATE_BLOOD_BAG', 'BloodBag', bagId, `Bolsa ${code} cadastrada - ${data.bloodType}`);
     
     return newBag;
-  }, [state.bloodBags.length, state.institutions, generateEvent, addAuditLog]);
+  }, [state.bloodBags.length, state.institutions, createBlockchainEvent, addAuditLog]);
 
-  const updateBagWithEvent = useCallback((bagId: string, newStatus: BloodBagStatus, eventType: string, description: string, performedBy: User, extraUpdate?: Partial<BloodBag>): BloodBag | null => {
-    let updatedBag: BloodBag | null = null;
-    
-    setState(prev => {
-      const bag = prev.bloodBags.find(b => b.id === bagId);
-      if (!bag) return prev;
-      
-      const event = generateEvent(bagId, eventType, description, performedBy, bag.instituicaoAtualId, bag.events.length);
-      updatedBag = {
-        ...bag,
-        status: newStatus,
-        events: [...bag.events, event],
-        blockchainTxHash: event.blockchainTxHash,
-        ...extraUpdate,
-      };
-      
-      return {
-        ...prev,
-        bloodBags: prev.bloodBags.map(b => b.id === bagId ? updatedBag! : b),
-      };
-    });
-    
-    return updatedBag;
-  }, [generateEvent]);
-
-  const approveBloodBag = useCallback((bagId: string, performedBy: User): BloodBag | null => {
+  const updateBagWithEvent = useCallback(async (
+    bagId: string,
+    newStatus: BloodBagStatus,
+    eventType: string,
+    description: string,
+    performedBy: User,
+    eventData: any,
+    extraUpdate?: Partial<BloodBag>
+  ): Promise<BloodBag | null> => {
     const bag = state.bloodBags.find(b => b.id === bagId);
-    if (!bag || (bag.status !== 'COLETADA' && bag.status !== 'EM_TESTE')) {
-      return null;
-    }
+    if (!bag) return null;
+
+    const event = await createBlockchainEvent(
+      bagId,
+      bag.code,
+      eventType,
+      description,
+      performedBy,
+      bag.instituicaoAtualId,
+      eventData
+    );
+
+    const updatedBag: BloodBag = {
+      ...bag,
+      status: newStatus,
+      events: [...bag.events, event],
+      blockchainTxHash: event.blockchainTxHash,
+      ...extraUpdate,
+    };
+
+    setState(prev => ({
+      ...prev,
+      bloodBags: prev.bloodBags.map(b => b.id === bagId ? updatedBag : b),
+    }));
+
+    return updatedBag;
+  }, [state.bloodBags, createBlockchainEvent]);
+
+  const approveBloodBag = useCallback(async (bagId: string, performedBy: User): Promise<BloodBag | null> => {
+    const bag = state.bloodBags.find(b => b.id === bagId);
+    if (!bag || (bag.status !== 'COLETADA' && bag.status !== 'EM_TESTE')) return null;
     
-    const updated = updateBagWithEvent(bagId, 'APROVADA', 'APROVACAO', 'Testes realizados - Bolsa aprovada', performedBy);
+    const updated = await updateBagWithEvent(
+      bagId,
+      'APROVADA',
+      'APROVACAO',
+      'Testes realizados - Bolsa aprovada',
+      performedBy,
+      { action: 'APROVACAO' }
+    );
+    
     if (updated) {
       addAuditLog(performedBy.id, 'APPROVE_BLOOD_BAG', 'BloodBag', bagId, `Bolsa ${bag.code} aprovada`);
     }
     return updated;
   }, [state.bloodBags, updateBagWithEvent, addAuditLog]);
 
-  const rejectBloodBag = useCallback((bagId: string, reason: string, performedBy: User): BloodBag | null => {
+  const rejectBloodBag = useCallback(async (bagId: string, reason: string, performedBy: User): Promise<BloodBag | null> => {
     const bag = state.bloodBags.find(b => b.id === bagId);
-    if (!bag || (bag.status !== 'COLETADA' && bag.status !== 'EM_TESTE')) {
-      return null;
-    }
+    if (!bag || (bag.status !== 'COLETADA' && bag.status !== 'EM_TESTE')) return null;
     
-    const updated = updateBagWithEvent(bagId, 'REPROVADA', 'REPROVACAO', `Bolsa reprovada: ${reason}`, performedBy);
+    const updated = await updateBagWithEvent(
+      bagId,
+      'REPROVADA',
+      'REPROVACAO',
+      `Bolsa reprovada: ${reason}`,
+      performedBy,
+      { action: 'REPROVACAO', reason }
+    );
+    
     if (updated) {
       addAuditLog(performedBy.id, 'REJECT_BLOOD_BAG', 'BloodBag', bagId, `Bolsa ${bag.code} reprovada: ${reason}`);
     }
     return updated;
   }, [state.bloodBags, updateBagWithEvent, addAuditLog]);
 
-  const storeBloodBag = useCallback((bagId: string, performedBy: User): BloodBag | null => {
+  const storeBloodBag = useCallback(async (bagId: string, performedBy: User): Promise<BloodBag | null> => {
     const bag = state.bloodBags.find(b => b.id === bagId);
     if (!bag || bag.status !== 'APROVADA') return null;
     
-    return updateBagWithEvent(bagId, 'ARMAZENADA', 'ARMAZENAMENTO', 'Bolsa armazenada em temperatura controlada', performedBy);
+    return await updateBagWithEvent(
+      bagId,
+      'ARMAZENADA',
+      'ARMAZENAMENTO',
+      'Bolsa armazenada em temperatura controlada',
+      performedBy,
+      { action: 'ARMAZENAMENTO' }
+    );
   }, [state.bloodBags, updateBagWithEvent]);
 
-  const makeAvailableBloodBag = useCallback((bagId: string, performedBy: User): BloodBag | null => {
+  const makeAvailableBloodBag = useCallback(async (bagId: string, performedBy: User): Promise<BloodBag | null> => {
     const bag = state.bloodBags.find(b => b.id === bagId);
     if (!bag || bag.status !== 'ARMAZENADA') return null;
     
-    return updateBagWithEvent(bagId, 'DISPONIVEL', 'LIBERACAO', 'Bolsa liberada para uso/transferência', performedBy);
+    return await updateBagWithEvent(
+      bagId,
+      'DISPONIVEL',
+      'LIBERACAO',
+      'Bolsa liberada para uso/transferência',
+      performedBy,
+      { action: 'LIBERACAO' }
+    );
   }, [state.bloodBags, updateBagWithEvent]);
 
-  const useBloodBag = useCallback((bagId: string, performedBy: User): BloodBag | null => {
+  const useBloodBag = useCallback(async (bagId: string, performedBy: User): Promise<BloodBag | null> => {
     const bag = state.bloodBags.find(b => b.id === bagId);
     if (!bag || (bag.status !== 'DISPONIVEL' && bag.status !== 'RECEBIDA')) return null;
     
-    const updated = updateBagWithEvent(bagId, 'UTILIZADA', 'UTILIZACAO', 'Bolsa utilizada em procedimento', performedBy);
+    const updated = await updateBagWithEvent(
+      bagId,
+      'UTILIZADA',
+      'UTILIZACAO',
+      'Bolsa utilizada em procedimento',
+      performedBy,
+      { action: 'UTILIZACAO' }
+    );
+    
     if (updated) {
       addAuditLog(performedBy.id, 'USE_BLOOD_BAG', 'BloodBag', bagId, `Bolsa ${bag.code} utilizada`);
     }
     return updated;
   }, [state.bloodBags, updateBagWithEvent, addAuditLog]);
 
-  const discardBloodBag = useCallback((bagId: string, reason: string, performedBy: User): BloodBag | null => {
+  const discardBloodBag = useCallback(async (bagId: string, reason: string, performedBy: User): Promise<BloodBag | null> => {
     const bag = state.bloodBags.find(b => b.id === bagId);
     if (!bag || bag.status !== 'DISPONIVEL') return null;
     
-    return updateBagWithEvent(bagId, 'DESCARTADA', 'DESCARTE', `Bolsa descartada: ${reason}`, performedBy);
+    return await updateBagWithEvent(
+      bagId,
+      'DESCARTADA',
+      'DESCARTE',
+      `Bolsa descartada: ${reason}`,
+      performedBy,
+      { action: 'DESCARTE', reason }
+    );
   }, [state.bloodBags, updateBagWithEvent]);
 
-  // Demand actions
   const addDemand = useCallback((data: { institutionId: string; bloodType: BloodType; quantity: number; urgency: DemandUrgency; description: string }): BloodDemand => {
     const newDemand: BloodDemand = {
       id: `dem-${Date.now()}`,
@@ -312,7 +373,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return updated;
   }, []);
 
-  // Transfer actions
   const createTransfer = useCallback((data: { bloodBagId: string; sourceInstitutionId: string; destinationInstitutionId: string; demandId?: string }): BloodTransfer | null => {
     const bag = state.bloodBags.find(b => b.id === data.bloodBagId);
     if (!bag || bag.status !== 'DISPONIVEL') return null;
@@ -335,106 +395,126 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ...prev,
       transfers: [newTransfer, ...prev.transfers],
       bloodBags: prev.bloodBags.map(b => b.id === data.bloodBagId ? { ...b, status: 'RESERVADA' as const } : b),
-      demands: data.demandId ? prev.demands.map(d => {
-        if (d.id !== data.demandId) return d;
-        return { ...d, transfers: [...(d.transfers || []), newTransfer], status: 'EM_ANALISE' as const };
-      }) : prev.demands,
     }));
     
     return newTransfer;
   }, [state.bloodBags, state.institutions]);
 
-  const updateTransferStatus = useCallback((transferId: string, newStatus: BloodTransfer['status'], bagUpdate?: Partial<BloodBag>): BloodTransfer | null => {
-    let updated: BloodTransfer | null = null;
-    
-    setState(prev => {
-      const transfer = prev.transfers.find(t => t.id === transferId);
-      if (!transfer) return prev;
-      
-      updated = { ...transfer, status: newStatus, updatedAt: new Date().toISOString() };
-      
-      return {
-        ...prev,
-        transfers: prev.transfers.map(t => t.id === transferId ? updated! : t),
-        bloodBags: bagUpdate ? prev.bloodBags.map(b => b.id === transfer.bloodBagId ? { ...b, ...bagUpdate } : b) : prev.bloodBags,
-      };
-    });
-    
-    return updated;
-  }, []);
-
   const acceptTransfer = useCallback((transferId: string): BloodTransfer | null => {
     const transfer = state.transfers.find(t => t.id === transferId);
     if (!transfer || transfer.status !== 'OFERTADA') return null;
-    return updateTransferStatus(transferId, 'ACEITA');
-  }, [state.transfers, updateTransferStatus]);
+    
+    setState(prev => ({
+      ...prev,
+      transfers: prev.transfers.map(t => t.id === transferId ? { ...t, status: 'ACEITA' as const, updatedAt: new Date().toISOString() } : t),
+    }));
+    
+    return { ...transfer, status: 'ACEITA' };
+  }, [state.transfers]);
 
   const reserveTransfer = useCallback((transferId: string): BloodTransfer | null => {
     const transfer = state.transfers.find(t => t.id === transferId);
     if (!transfer || transfer.status !== 'ACEITA') return null;
-    return updateTransferStatus(transferId, 'RESERVADA');
-  }, [state.transfers, updateTransferStatus]);
+    
+    setState(prev => ({
+      ...prev,
+      transfers: prev.transfers.map(t => t.id === transferId ? { ...t, status: 'RESERVADA' as const, updatedAt: new Date().toISOString() } : t),
+    }));
+    
+    return { ...transfer, status: 'RESERVADA' };
+  }, [state.transfers]);
 
-  const startTransportTransfer = useCallback((transferId: string, performedBy: User): BloodTransfer | null => {
+  const startTransportTransfer = useCallback(async (transferId: string, performedBy: User): Promise<BloodTransfer | null> => {
     const transfer = state.transfers.find(t => t.id === transferId);
     if (!transfer || transfer.status !== 'RESERVADA') return null;
     
-    setState(prev => {
-      const bag = prev.bloodBags.find(b => b.id === transfer.bloodBagId);
-      if (!bag) return prev;
-      
-      const event = generateEvent(bag.id, 'ENVIO', `Bolsa enviada para ${transfer.destinationInstitution?.name}`, performedBy, transfer.sourceInstitutionId, bag.events.length);
-      
-      return {
-        ...prev,
-        transfers: prev.transfers.map(t => t.id === transferId ? { ...t, status: 'EM_TRANSPORTE' as const, updatedAt: new Date().toISOString() } : t),
-        bloodBags: prev.bloodBags.map(b => b.id === transfer.bloodBagId ? { ...b, status: 'EM_TRANSPORTE' as const, events: [...b.events, event] } : b),
-      };
-    });
+    const bag = state.bloodBags.find(b => b.id === transfer.bloodBagId);
+    if (!bag) return null;
+
+    const event = await createBlockchainEvent(
+      bag.id,
+      bag.code,
+      'ENVIO',
+      `Bolsa enviada para ${transfer.destinationInstitution?.name}`,
+      performedBy,
+      transfer.sourceInstitutionId,
+      { action: 'ENVIO', destination: transfer.destinationInstitutionId }
+    );
+    
+    setState(prev => ({
+      ...prev,
+      transfers: prev.transfers.map(t => t.id === transferId ? { ...t, status: 'EM_TRANSPORTE' as const, updatedAt: new Date().toISOString() } : t),
+      bloodBags: prev.bloodBags.map(b => b.id === transfer.bloodBagId ? {
+        ...b,
+        status: 'EM_TRANSPORTE' as const,
+        events: [...b.events, event],
+        blockchainTxHash: event.blockchainTxHash,
+      } : b),
+    }));
     
     return { ...transfer, status: 'EM_TRANSPORTE' };
-  }, [state.transfers, generateEvent]);
+  }, [state.transfers, state.bloodBags, createBlockchainEvent]);
 
-  const receiveTransfer = useCallback((transferId: string, performedBy: User): BloodTransfer | null => {
+  const receiveTransfer = useCallback(async (transferId: string, performedBy: User): Promise<BloodTransfer | null> => {
     const transfer = state.transfers.find(t => t.id === transferId);
     if (!transfer || transfer.status !== 'EM_TRANSPORTE') return null;
     
-    setState(prev => {
-      const bag = prev.bloodBags.find(b => b.id === transfer.bloodBagId);
-      if (!bag) return prev;
-      
-      const event = generateEvent(bag.id, 'RECEBIMENTO', `Bolsa recebida de ${transfer.sourceInstitution?.name}`, performedBy, transfer.destinationInstitutionId, bag.events.length);
-      
-      return {
-        ...prev,
-        transfers: prev.transfers.map(t => t.id === transferId ? { ...t, status: 'RECEBIDA' as const, updatedAt: new Date().toISOString() } : t),
-        bloodBags: prev.bloodBags.map(b => b.id === transfer.bloodBagId ? {
-          ...b,
-          status: 'RECEBIDA' as const,
-          instituicaoAtualId: transfer.destinationInstitutionId,
-          instituicaoAtual: transfer.destinationInstitution,
-          events: [...b.events, event],
-        } : b),
-        demands: transfer.demandId ? prev.demands.map(d => d.id === transfer.demandId ? { ...d, status: 'ATENDIDA' as const } : d) : prev.demands,
-      };
-    });
+    const bag = state.bloodBags.find(b => b.id === transfer.bloodBagId);
+    if (!bag) return null;
+
+    const event = await createBlockchainEvent(
+      bag.id,
+      bag.code,
+      'RECEBIMENTO',
+      `Bolsa recebida de ${transfer.sourceInstitution?.name}`,
+      performedBy,
+      transfer.destinationInstitutionId,
+      { action: 'RECEBIMENTO', source: transfer.sourceInstitutionId }
+    );
+    
+    setState(prev => ({
+      ...prev,
+      transfers: prev.transfers.map(t => t.id === transferId ? { ...t, status: 'RECEBIDA' as const, updatedAt: new Date().toISOString() } : t),
+      bloodBags: prev.bloodBags.map(b => b.id === transfer.bloodBagId ? {
+        ...b,
+        status: 'RECEBIDA' as const,
+        instituicaoAtualId: transfer.destinationInstitutionId,
+        instituicaoAtual: transfer.destinationInstitution,
+        events: [...b.events, event],
+        blockchainTxHash: event.blockchainTxHash,
+      } : b),
+      demands: transfer.demandId ? prev.demands.map(d => d.id === transfer.demandId ? { ...d, status: 'ATENDIDA' as const } : d) : prev.demands,
+    }));
     
     return { ...transfer, status: 'RECEBIDA' };
-  }, [state.transfers, generateEvent]);
+  }, [state.transfers, state.bloodBags, createBlockchainEvent]);
 
   const refuseTransfer = useCallback((transferId: string): BloodTransfer | null => {
     const transfer = state.transfers.find(t => t.id === transferId);
     if (!transfer || transfer.status !== 'OFERTADA') return null;
-    return updateTransferStatus(transferId, 'RECUSADA', { status: 'DISPONIVEL' });
-  }, [state.transfers, updateTransferStatus]);
+    
+    setState(prev => ({
+      ...prev,
+      transfers: prev.transfers.map(t => t.id === transferId ? { ...t, status: 'RECUSADA' as const, updatedAt: new Date().toISOString() } : t),
+      bloodBags: prev.bloodBags.map(b => b.id === transfer.bloodBagId ? { ...b, status: 'DISPONIVEL' as const } : b),
+    }));
+    
+    return { ...transfer, status: 'RECUSADA' };
+  }, [state.transfers]);
 
   const cancelTransfer = useCallback((transferId: string): BloodTransfer | null => {
     const transfer = state.transfers.find(t => t.id === transferId);
     if (!transfer || (transfer.status !== 'OFERTADA' && transfer.status !== 'ACEITA')) return null;
-    return updateTransferStatus(transferId, 'CANCELADA', { status: 'DISPONIVEL' });
-  }, [state.transfers, updateTransferStatus]);
+    
+    setState(prev => ({
+      ...prev,
+      transfers: prev.transfers.map(t => t.id === transferId ? { ...t, status: 'CANCELADA' as const, updatedAt: new Date().toISOString() } : t),
+      bloodBags: prev.bloodBags.map(b => b.id === transfer.bloodBagId ? { ...b, status: 'DISPONIVEL' as const } : b),
+    }));
+    
+    return { ...transfer, status: 'CANCELADA' };
+  }, [state.transfers]);
 
-  // Temperature
   const addTemperatureReading = useCallback((bloodBagId: string, temperature: number, institutionId: string): TemperatureReading => {
     const alert = temperature > 6 || temperature < 2;
     const reading: TemperatureReading = {
@@ -449,7 +529,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return reading;
   }, []);
 
-  // Helpers
   const getBloodBagByCode = useCallback((code: string) => state.bloodBags.find(b => b.code === code), [state.bloodBags]);
   const getBloodBagById = useCallback((id: string) => state.bloodBags.find(b => b.id === id), [state.bloodBags]);
   const getInstitutionById = useCallback((id: string) => state.institutions.find(i => i.id === id), [state.institutions]);
@@ -457,7 +536,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const getDemandById = useCallback((id: string) => state.demands.find(d => d.id === id), [state.demands]);
   const getTransferById = useCallback((id: string) => state.transfers.find(t => t.id === id), [state.transfers]);
 
-  // Reset
+  const verifyBlockchainIntegrity = useCallback(async (): Promise<boolean> => {
+    return await blockchainService.verifyChain();
+  }, []);
+
   const resetData = useCallback(() => {
     setState({
       institutions: initialInstitutions,
@@ -480,6 +562,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       createTransfer, acceptTransfer, reserveTransfer, startTransportTransfer, receiveTransfer, refuseTransfer, cancelTransfer,
       addTemperatureReading,
       getBloodBagByCode, getBloodBagById, getInstitutionById, getUserById, getDemandById, getTransferById,
+      verifyBlockchainIntegrity,
       resetData,
     }}>
       {children}
