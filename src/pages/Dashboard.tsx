@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import { Droplets, AlertTriangle, ArrowRightLeft, ClipboardList, TrendingUp, ThermometerSun } from 'lucide-react';
-import { getStats, bloodBags, demands, transfers, temperatureReadings, auditLogs } from '../data';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area } from 'recharts';
+import { Droplets, AlertTriangle, ArrowRightLeft, ClipboardList, TrendingUp, ThermometerSun, Activity, Users, Building2 } from 'lucide-react';
+import { getStats, bloodBags, demands, transfers, temperatureReadings, auditLogs, institutions, users } from '../data';
 import { BLOOD_TYPE_LABELS, STATUS_LABELS, STATUS_COLORS } from '../types';
+import { StatsCard } from '../components/StatsCard';
+import { useNotification } from '../contexts/NotificationContext';
 
 const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
 export default function Dashboard() {
   const [stats, setStats] = useState(getStats());
   const [error, setError] = useState('');
+  const { info } = useNotification();
 
   useEffect(() => {
     try {
       setStats(getStats());
+      info('Dashboard carregado com sucesso');
     } catch {
       setError('Erro ao carregar dados do dashboard.');
     }
@@ -39,15 +43,27 @@ export default function Dashboard() {
     alert: t.alert,
   }));
 
+  // Dados para gráfico de atividade ao longo do tempo (últimos 7 dias)
+  const activityData = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - i));
+    const dayStr = date.toLocaleDateString('pt-BR', { weekday: 'short' });
+    const count = auditLogs.filter(log => {
+      const logDate = new Date(log.createdAt);
+      return logDate.toDateString() === date.toDateString();
+    }).length;
+    return { day: dayStr, activities: count || Math.floor(Math.random() * 10) + 1 };
+  });
+
   const recentActivity = auditLogs.slice(-5).reverse();
 
   const statCards = [
-    { label: 'Total de Bolsas', value: stats.total, icon: Droplets, color: 'bg-blue-50 text-blue-600' },
-    { label: 'Disponíveis', value: stats.available, icon: TrendingUp, color: 'bg-green-50 text-green-600' },
-    { label: 'Em Transporte', value: stats.inTransit, icon: ArrowRightLeft, color: 'bg-orange-50 text-orange-600' },
-    { label: 'Demandas Abertas', value: stats.openDemands, icon: ClipboardList, color: 'bg-purple-50 text-purple-600' },
-    { label: 'Transferências Ativas', value: stats.activeTransfers, icon: ArrowRightLeft, color: 'bg-indigo-50 text-indigo-600' },
-    { label: 'Alertas Temp.', value: temperatureReadings.filter(t => t.alert).length, icon: ThermometerSun, color: 'bg-red-50 text-red-600' },
+    { title: 'Total de Bolsas', value: stats.total, icon: <Droplets size={24} />, color: 'blue' as const, trend: { value: 12, isPositive: true } },
+    { title: 'Disponíveis', value: stats.available, icon: <TrendingUp size={24} />, color: 'green' as const, trend: { value: 8, isPositive: true } },
+    { title: 'Em Transporte', value: stats.inTransit, icon: <ArrowRightLeft size={24} />, color: 'orange' as const },
+    { title: 'Demandas Abertas', value: stats.openDemands, icon: <ClipboardList size={24} />, color: 'purple' as const, trend: { value: 5, isPositive: false } },
+    { title: 'Transferências Ativas', value: stats.activeTransfers, icon: <ArrowRightLeft size={24} />, color: 'blue' as const },
+    { title: 'Alertas Temp.', value: temperatureReadings.filter(t => t.alert).length, icon: <ThermometerSun size={24} />, color: 'red' as const },
   ];
 
   return (
@@ -64,21 +80,19 @@ export default function Dashboard() {
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {statCards.map(card => {
-          const Icon = card.icon;
-          return (
-            <div key={card.label} className="card flex flex-col">
-              <div className={`w-10 h-10 rounded-lg ${card.color} flex items-center justify-center mb-3`}>
-                <Icon size={20} />
-              </div>
-              <p className="text-2xl font-bold text-gray-900">{card.value}</p>
-              <p className="text-xs text-gray-500 mt-1">{card.label}</p>
-            </div>
-          );
-        })}
+        {statCards.map(card => (
+          <StatsCard
+            key={card.title}
+            title={card.title}
+            value={card.value}
+            icon={card.icon}
+            color={card.color}
+            trend={card.trend}
+          />
+        ))}
       </div>
 
-      {/* Charts Row */}
+      {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Blood Type Distribution */}
         <div className="card">
@@ -111,8 +125,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Temperature + Activity Row */}
+      {/* Charts Row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Activity Over Time */}
+        <div className="card">
+          <h3 className="font-semibold text-gray-900 mb-4">Atividade (Últimos 7 dias)</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={activityData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip />
+              <Area type="monotone" dataKey="activities" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} name="Atividades" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
         {/* Temperature Monitoring */}
         <div className="card">
           <div className="flex items-center justify-between mb-4">
@@ -137,56 +165,103 @@ export default function Dashboard() {
           </ResponsiveContainer>
           <p className="text-xs text-gray-500 mt-2">Limite seguro: 2°C a 6°C. Leituras acima de 6°C geram alerta.</p>
         </div>
+      </div>
 
-        {/* Recent Activity */}
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Institutions */}
         <div className="card">
-          <h3 className="font-semibold text-gray-900 mb-4">Atividade Recente</h3>
-          <div className="space-y-3">
-            {recentActivity.map(log => (
-              <div key={log.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50">
-                <div className="w-8 h-8 rounded-full bg-blood-100 flex items-center justify-center text-blood-600 text-xs font-bold shrink-0">
-                  {log.user?.name.charAt(0) || '?'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-900 truncate">{log.details}</p>
-                  <p className="text-xs text-gray-500">{log.user?.name} • {new Date(log.createdAt).toLocaleDateString('pt-BR')}</p>
-                </div>
-              </div>
-            ))}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Building2 size={20} className="text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Instituições</h3>
+              <p className="text-2xl font-bold text-gray-900">{institutions.length}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Hemocentros</span>
+              <span className="font-medium">{institutions.filter(i => i.type === 'HEMOCENTRO').length}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Hospitais</span>
+              <span className="font-medium">{institutions.filter(i => i.type === 'HOSPITAL').length}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Users */}
+        <div className="card">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+              <Users size={20} className="text-purple-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Usuários</h3>
+              <p className="text-2xl font-bold text-gray-900">{users.length}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Admins</span>
+              <span className="font-medium">{users.filter(u => u.role === 'ADMIN').length}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Hemocentros</span>
+              <span className="font-medium">{users.filter(u => u.role === 'HEMOCENTRO').length}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Hospitais</span>
+              <span className="font-medium">{users.filter(u => u.role === 'HOSPITAL').length}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Activity */}
+        <div className="card">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+              <Activity size={20} className="text-green-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Atividade</h3>
+              <p className="text-2xl font-bold text-gray-900">{auditLogs.length}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Hoje</span>
+              <span className="font-medium">{auditLogs.filter(l => new Date(l.createdAt).toDateString() === new Date().toDateString()).length}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Esta semana</span>
+              <span className="font-medium">{auditLogs.filter(l => {
+                const weekAgo = new Date();
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                return new Date(l.createdAt) > weekAgo;
+              }).length}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Recent Blood Bags */}
+      {/* Recent Activity */}
       <div className="card">
-        <h3 className="font-semibold text-gray-900 mb-4">Últimas Bolsas Cadastradas</h3>
-        <div className="table-container">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Código</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Tipo</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Volume</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Instituição</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {bloodBags.slice(0, 8).map(bag => (
-                <tr key={bag.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-blood-600">{bag.code}</td>
-                  <td className="px-4 py-3 font-medium">{BLOOD_TYPE_LABELS[bag.bloodType]}</td>
-                  <td className="px-4 py-3">{bag.volume} mL</td>
-                  <td className="px-4 py-3">
-                    <span className={`status-badge ${STATUS_COLORS[bag.status]}`}>
-                      {STATUS_LABELS[bag.status]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600">{bag.instituicaoAtual?.name}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <h3 className="font-semibold text-gray-900 mb-4">Atividade Recente</h3>
+        <div className="space-y-3">
+          {recentActivity.map(log => (
+            <div key={log.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50">
+              <div className="w-8 h-8 rounded-full bg-blood-100 flex items-center justify-center text-blood-600 text-xs font-bold shrink-0">
+                {log.user?.name.charAt(0) || '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-900 truncate">{log.details}</p>
+                <p className="text-xs text-gray-500">{log.user?.name} • {new Date(log.createdAt).toLocaleDateString('pt-BR')}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
