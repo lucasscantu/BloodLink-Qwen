@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useData } from '../contexts/DataContext';
+import { useNotification } from '../contexts/NotificationContext';
 import { Scan, Camera, Keyboard, AlertCircle } from 'lucide-react';
 
 export default function ScanQR() {
+  const { getBloodBagByCode } = useData();
+  const { error: showError } = useNotification();
   const [mode, setMode] = useState<'camera' | 'manual'>('manual');
   const [manualCode, setManualCode] = useState('');
   const [error, setError] = useState('');
@@ -28,7 +32,13 @@ export default function ScanQR() {
     setError('');
     const code = extractCode(manualCode);
     if (code) {
-      navigate(`/blood-bags/${code}`);
+      const bag = getBloodBagByCode(code);
+      if (bag) {
+        navigate(`/blood-bags/${code}`);
+      } else {
+        setError(`Bolsa ${code} não encontrada no sistema.`);
+        showError(`Bolsa ${code} não encontrada`);
+      }
     } else {
       setError('Código inválido. Use o formato BL-XXXXX ou uma URL completa.');
     }

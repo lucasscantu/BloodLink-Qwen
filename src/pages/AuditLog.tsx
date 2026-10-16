@@ -1,31 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { auditLogs } from '../data';
+import { useData } from '../contexts/DataContext';
 import { AuditLog } from '../types';
 import { Search } from 'lucide-react';
 
 export default function AuditLogPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const { auditLogs } = useData();
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     try {
-      setLogs([...auditLogs]);
+      // Data is already loaded from DataStore
     } catch {
       setError('Erro ao carregar logs de auditoria.');
     }
   }, []);
 
-  const filteredLogs = logs.filter(log => {
+  const filteredLogs = auditLogs.filter((log: AuditLog) => {
     const matchSearch = log.details.toLowerCase().includes(search.toLowerCase()) ||
-      log.user?.name.toLowerCase().includes(search.toLowerCase()) ||
+      (log.user?.name || '').toLowerCase().includes(search.toLowerCase()) ||
       log.entityId.toLowerCase().includes(search.toLowerCase());
     const matchAction = !actionFilter || log.action === actionFilter;
     return matchSearch && matchAction;
   });
 
-  const actions = [...new Set(logs.map(l => l.action))];
+  const actions = [...new Set(auditLogs.map((l: AuditLog) => l.action))];
 
   const actionIcons: Record<string, string> = {
     CREATE_INSTITUTION: '🏥',
@@ -72,19 +72,19 @@ export default function AuditLogPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="card text-center">
-          <p className="text-2xl font-bold text-gray-900">{logs.length}</p>
+          <p className="text-2xl font-bold text-gray-900">{auditLogs.length}</p>
           <p className="text-xs text-gray-500">Total de Eventos</p>
         </div>
         <div className="card text-center">
-          <p className="text-2xl font-bold text-blood-600">{logs.filter(l => l.action.includes('BLOOD_BAG')).length}</p>
+          <p className="text-2xl font-bold text-blood-600">{auditLogs.filter((l: AuditLog) => l.action.includes('BLOOD_BAG')).length}</p>
           <p className="text-xs text-gray-500">Eventos de Bolsas</p>
         </div>
         <div className="card text-center">
-          <p className="text-2xl font-bold text-blue-600">{logs.filter(l => l.action.includes('TRANSFER')).length}</p>
+          <p className="text-2xl font-bold text-blue-600">{auditLogs.filter((l: AuditLog) => l.action.includes('TRANSFER')).length}</p>
           <p className="text-xs text-gray-500">Transferências</p>
         </div>
         <div className="card text-center">
-          <p className="text-2xl font-bold text-orange-600">{logs.filter(l => l.action.includes('ALERT')).length}</p>
+          <p className="text-2xl font-bold text-orange-600">{auditLogs.filter((l: AuditLog) => l.action.includes('ALERT')).length}</p>
           <p className="text-xs text-gray-500">Alertas</p>
         </div>
       </div>
