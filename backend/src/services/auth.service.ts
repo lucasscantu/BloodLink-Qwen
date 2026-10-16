@@ -4,6 +4,14 @@ import { generateToken } from '../middleware/auth';
 import { UserRole } from '@prisma/client';
 import { AppError } from '../middleware/error-handler';
 
+interface RegisterData {
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  institutionId?: string;
+}
+
 export class AuthService {
   async login(email: string, password: string) {
     const user = await prisma.user.findUnique({ where: { email } });
@@ -29,7 +37,7 @@ export class AuthService {
     };
   }
 
-  async register(data: { name: string; email: string; password: string; role: UserRole; institutionId?: string }) {
+  async register(data: RegisterData) {
     const existing = await prisma.user.findUnique({ where: { email: data.email } });
     if (existing) {
       throw new AppError(409, 'Email já cadastrado');
