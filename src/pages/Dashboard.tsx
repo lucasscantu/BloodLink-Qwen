@@ -5,6 +5,7 @@ import { useData } from '../contexts/DataContext';
 import { useNotification } from '../contexts/NotificationContext';
 import { BLOOD_TYPE_LABELS, STATUS_LABELS, BloodType } from '../types';
 import { StatsCard } from '../components/StatsCard';
+import { BlockchainStatus } from '../components/BlockchainStatus';
 
 const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 
@@ -92,8 +93,11 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-gray-500 text-sm">Visão geral do sistema BloodLink</p>
         </div>
-        <div className="text-sm text-gray-500">
-          {new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+        <div className="flex flex-col items-end gap-2">
+          <BlockchainStatus />
+          <div className="text-sm text-gray-500">
+            {new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </div>
         </div>
       </div>
 

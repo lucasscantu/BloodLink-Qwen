@@ -53,7 +53,7 @@ interface DataStore extends DataState {
   getUserById: (id: string) => User | undefined;
   getDemandById: (id: string) => BloodDemand | undefined;
   getTransferById: (id: string) => BloodTransfer | undefined;
-  verifyBlockchainIntegrity: () => Promise<boolean>;
+  verifyBlockchainIntegrity: () => Promise<{ valid: boolean; issues: string[] }>;
   resetData: () => void;
 }
 
@@ -536,7 +536,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const getDemandById = useCallback((id: string) => state.demands.find(d => d.id === id), [state.demands]);
   const getTransferById = useCallback((id: string) => state.transfers.find(t => t.id === id), [state.transfers]);
 
-  const verifyBlockchainIntegrity = useCallback(async (): Promise<boolean> => {
+  const verifyBlockchainIntegrity = useCallback(async (): Promise<{ valid: boolean; issues: string[] }> => {
     return await blockchainService.verifyChain();
   }, []);
 
