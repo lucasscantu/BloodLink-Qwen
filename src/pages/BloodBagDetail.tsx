@@ -38,11 +38,12 @@ export default function BloodBagDetail() {
     setVerifying(true);
     try {
       // Verificar integridade da blockchain
-      const chainValid = await verifyBlockchainIntegrity();
+      const { valid: chainValid, issues } = await verifyBlockchainIntegrity();
       
       // Verificar eventos específicos da bolsa
       const events = bag.events;
       let allEventsValid = true;
+      const eventIssues: string[] = [];
       
       for (const event of events) {
         const isValid = await blockchainService.verifyEvent(
@@ -52,7 +53,7 @@ export default function BloodBagDetail() {
         );
         if (!isValid) {
           allEventsValid = false;
-          break;
+          eventIssues.push(`Evento ${event.eventIndex} (${event.type}) com hash divergente`);
         }
       }
       
@@ -62,7 +63,8 @@ export default function BloodBagDetail() {
       if (chainValid && allEventsValid) {
         success(`Integridade verificada! ${events.length} eventos confirmados na blockchain.`);
       } else {
-        error('Divergência detectada na blockchain!');
+        const allIssues = [...issues, ...eventIssues];
+        error(`Divergência detectada: ${allIssues.join(', ')}`);
       }
     } catch (err) {
       setVerifying(false);

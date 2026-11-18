@@ -18,6 +18,7 @@ import Institutions from './pages/Institutions';
 import UsersPage from './pages/Users';
 import Settings from './pages/Settings';
 import NotFound from './pages/NotFound';
+import BlockchainExplorer from './pages/BlockchainExplorer';
 import { UserRole } from './types';
 
 // Protected route wrapper - requires authentication
@@ -65,6 +66,7 @@ function AppRoutes() {
         {/* Routes for ADMIN and AUDITOR */}
         <Route element={<RoleGuard roles={['ADMIN', 'AUDITOR']} />}>
           <Route path="/audit" element={<AuditLogPage />} />
+          <Route path="/blockchain" element={<BlockchainExplorer />} />
         </Route>
 
         {/* Routes for ADMIN only */}

@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   LayoutDashboard, Droplets, QrCode, Scan, ClipboardList, ArrowRightLeft,
-  Building2, Users, Shield, LogOut, Menu, X, Settings, Activity, ChevronDown
+  Building2, Users, Shield, LogOut, Menu, X, Settings, Activity, ChevronDown, Database
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -30,6 +30,7 @@ export default function Layout({ children }: LayoutProps) {
     { path: '/transfers', label: 'Transferências', icon: ArrowRightLeft, roles: ['ADMIN', 'HEMOCENTRO', 'HOSPITAL'] },
     { path: '/temperature', label: 'Temperatura', icon: Activity, roles: ['ADMIN', 'HEMOCENTRO', 'HOSPITAL'] },
     { path: '/audit', label: 'Auditoria', icon: Shield, roles: ['ADMIN', 'AUDITOR'] },
+    { path: '/blockchain', label: 'Blockchain', icon: Database, roles: ['ADMIN', 'AUDITOR'] },
     { path: '/institutions', label: 'Instituições', icon: Building2, roles: ['ADMIN'] },
     { path: '/users', label: 'Usuários', icon: Users, roles: ['ADMIN'] },
     { path: '/settings', label: 'Configurações', icon: Settings, roles: ['ADMIN'] },
